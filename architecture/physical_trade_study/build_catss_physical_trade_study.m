@@ -38,6 +38,7 @@ bdclose("all");
 slreq.clear;
 Simulink.data.dictionary.closeAll("-discard");
 systemcomposer.profile.Profile.closeAll();
+systemcomposer.allocation.AllocationSet.closeAll();
 
 variants = defineVariants();
 criteria = defineCriteria();
@@ -343,6 +344,7 @@ for idx = 1:numel(names)
     components(idx).FunctionAnchor = string(anchors(idx));
     components(idx).Subcomponents = string(subcomponents{idx});
     components(idx).RequirementIds = string(reqIds{idx});
+    components(idx).Bindings = defaultInternalBindings(components(idx).FunctionAnchor, components(idx).Subcomponents);
 end
 end
 
@@ -426,6 +428,7 @@ linkDictionary(model, char(dictFile));
 applyProfile(model, char(profileName));
 
 dict = systemcomposer.openDictionary(char(dictFile));
+interfaceLookup = buildInterfaceLookup(variant);
 
 componentMap = containers.Map('KeyType','char','ValueType','any');
 metadataComp = addComponent(arch, 'TradeStudyMetadata');
@@ -451,7 +454,14 @@ for idx = 1:numel(variant.Connections)
     connect(srcComp, dstComp, Rule="name");
 end
 
+for idx = 1:numel(variant.Components)
+    comp = componentMap(char(variant.Components(idx).Name));
+    wireInternalBindings(comp, variant.Components(idx), dict, interfaceLookup);
+end
+
 save(model);
+layoutVariantModel(char(variant.ModelName), variant);
+assignVariantInterfaces(char(variant.ModelName), variant, dict);
 try
     set_param(char(variant.ModelName), "SimulationCommand", "update");
 catch ME
@@ -469,12 +479,160 @@ end
 end
 
 function port = ensureComponentPort(component, portName, direction)
-try
-    component.getPort(char(portName));
-catch
+port = component.getPort(char(portName));
+if isempty(port)
     addPort(component.Architecture, char(portName), char(direction));
 end
 port = component.getPort(char(portName));
+end
+
+function lookup = buildInterfaceLookup(variant)
+lookup = containers.Map('KeyType', 'char', 'ValueType', 'char');
+for idx = 1:numel(variant.Connections)
+    conn = variant.Connections(idx);
+    lookup(sprintf('%s|%s', char(conn.SrcComp), char(conn.SrcPort))) = char(conn.Interface);
+    lookup(sprintf('%s|%s', char(conn.DstComp), char(conn.SrcPort))) = char(conn.Interface);
+end
+end
+
+function wireInternalBindings(component, componentData, dict, interfaceLookup)
+for idx = 1:numel(componentData.Bindings)
+    binding = componentData.Bindings(idx);
+    parentPort = component.getPort(char(binding.ParentPort));
+    if isempty(parentPort)
+        continue;
+    end
+
+    child = component.Architecture.getComponent(char(binding.ChildName));
+    childPort = ensureComponentPort(child, binding.ParentPort, binding.Direction);
+
+    key = sprintf('%s|%s', char(componentData.Name), char(binding.ParentPort));
+    if isKey(interfaceLookup, key)
+        iface = dict.getInterface(interfaceLookup(key));
+        childPort.setInterface(iface);
+    end
+
+    archPort = component.Architecture.getPort(char(binding.ParentPort));
+    if strcmp(binding.Direction, "in")
+        connect(archPort, childPort);
+    else
+        connect(childPort, archPort);
+    end
+end
+end
+
+function bindings = defaultInternalBindings(anchor, subcomponents)
+bindings = repmat(struct('ParentPort', "", 'ChildName', "", 'Direction', ""), 0, 1);
+
+switch char(anchor)
+    case 'ProvideHabitat'
+        bindings = [ ...
+            makeBinding("CommandsToHabitat", subcomponents(1), "in")
+            makeBinding("CommandsToHabitatCluster", subcomponents(1), "in")
+            makeBinding("CommandsToPods", subcomponents(1), "in")
+            makeBinding("ConditionedEnvironmentToHabitat", subcomponents(1), "in")
+            makeBinding("ConditionedEnvironmentToHabitatCluster", subcomponents(1), "in")
+            makeBinding("ConditionedEnvironmentToPods", subcomponents(1), "in")];
+    case 'SustainLifeSupport'
+        bindings = [ ...
+            makeBinding("CommandsToLifeSupport", subcomponents(1), "in")
+            makeBinding("CommandsToUtilityCore", subcomponents(1), "in")
+            makeBinding("CommandsToServiceCore", subcomponents(1), "in")
+            makeBinding("SafetyStateToLifeSupport", subcomponents(1), "in")
+            makeBinding("SafetyStateToUtilityCore", subcomponents(1), "in")
+            makeBinding("SafetyStateToServiceCore", subcomponents(1), "in")
+            makeBinding("WasteReturnToLifeSupport", subcomponents(end), "in")
+            makeBinding("WasteReturnToUtilityCore", subcomponents(end), "in")
+            makeBinding("WasteReturnToServiceCore", subcomponents(end), "in")
+            makeBinding("ConditionedEnvironmentToHabitat", subcomponents(1), "out")
+            makeBinding("ConditionedEnvironmentToHabitatCluster", subcomponents(1), "out")
+            makeBinding("ConditionedEnvironmentToPods", subcomponents(1), "out")
+            makeBinding("LifeSupportTelemetryToSafety", subcomponents(2), "out")];
+    case 'OperateStation'
+        bindings = [ ...
+            makeBinding("CommandsToHabitat", subcomponents(1), "out")
+            makeBinding("CommandsToHabitatCluster", subcomponents(1), "out")
+            makeBinding("CommandsToPods", subcomponents(1), "out")
+            makeBinding("CommandsToLifeSupport", subcomponents(1), "out")
+            makeBinding("CommandsToUtilityCore", subcomponents(1), "out")
+            makeBinding("CommandsToServiceCore", subcomponents(1), "out")
+            makeBinding("ConsumablesToCare", subcomponents(3), "out")
+            makeBinding("HealthStatusToOps", subcomponents(1), "in")
+            makeBinding("SafetyStateToOps", subcomponents(1), "in")];
+    case 'EnsureSafety'
+        bindings = [ ...
+            makeBinding("HealthStatusToSafety", subcomponents(1), "in")
+            makeBinding("LifeSupportTelemetryToSafety", subcomponents(1), "in")
+            makeBinding("SafetyStateToLifeSupport", subcomponents(1), "out")
+            makeBinding("SafetyStateToUtilityCore", subcomponents(1), "out")
+            makeBinding("SafetyStateToServiceCore", subcomponents(1), "out")
+            makeBinding("SafetyStateToOps", subcomponents(1), "out")];
+    case 'CareForColony'
+        bindings = [ ...
+            makeBinding("ConsumablesToCare", subcomponents(1), "in")
+            makeBinding("HealthStatusToOps", subcomponents(3), "out")
+            makeBinding("HealthStatusToSafety", subcomponents(3), "out")
+            makeBinding("WasteReturnToLifeSupport", subcomponents(2), "out")
+            makeBinding("WasteReturnToUtilityCore", subcomponents(2), "out")
+            makeBinding("WasteReturnToServiceCore", subcomponents(2), "out")];
+end
+end
+
+function binding = makeBinding(parentPort, childName, direction)
+binding = struct('ParentPort', string(parentPort), 'ChildName', string(childName), 'Direction', string(direction));
+end
+
+function layoutVariantModel(modelName, variant)
+load_system(modelName);
+
+rootPositions = {
+    [80 120 250 220]
+    [360 40 530 140]
+    [640 40 810 140]
+    [640 240 810 340]
+    [360 240 530 340]
+    };
+
+for idx = 1:numel(variant.Components)
+    set_param([modelName '/' char(variant.Components(idx).Name)], 'Position', rootPositions{idx});
+    layoutChildComponents(modelName, variant.Components(idx));
+end
+
+if bdIsLoaded(modelName) && ~isempty(find_system(modelName, 'SearchDepth', 1, 'Name', 'TradeStudyMetadata'))
+    set_param([modelName '/TradeStudyMetadata'], 'Position', [900 40 1070 120]);
+end
+save_system(modelName);
+end
+
+function layoutChildComponents(modelName, componentData)
+childPositions = {
+    [50 40 160 100]
+    [220 40 330 100]
+    [50 150 160 210]
+    [220 150 330 210]
+    [135 260 245 320]
+    };
+
+parentPath = [modelName '/' char(componentData.Name)];
+for idx = 1:numel(componentData.Subcomponents)
+    set_param([parentPath '/' char(componentData.Subcomponents(idx))], 'Position', childPositions{idx});
+end
+end
+
+function assignVariantInterfaces(modelName, variant, dict)
+m = systemcomposer.openModel(modelName);
+arch = m.Architecture;
+for idx = 1:numel(variant.Connections)
+    conn = variant.Connections(idx);
+    iface = dict.getInterface(char(conn.Interface));
+    srcComp = arch.getComponent(char(conn.SrcComp));
+    dstComp = arch.getComponent(char(conn.DstComp));
+    srcPort = srcComp.getPort(char(conn.SrcPort));
+    dstPort = dstComp.getPort(char(conn.SrcPort));
+    srcPort.setInterface(iface);
+    dstPort.setInterface(iface);
+end
+save(m);
 end
 
 
@@ -515,6 +673,7 @@ total = ...
 end
 
 function createVariantAllocation(variant, allocDir, funcModelName, funcArch)
+systemcomposer.allocation.AllocationSet.closeAll();
 physModel = systemcomposer.openModel(char(variant.File));
 physArch = physModel.Architecture;
 allocName = erase(char(variant.AllocationFile), '.mldatx');
