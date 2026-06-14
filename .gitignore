@@ -1,0 +1,17 @@
+# MATLAB / Simulink derived & cache artifacts
+work/
+slprj/
+*.slxc
+*.autosave
+*.asv
+*.m~
+
+# Simulink Project local resources (keep project definition, ignore user prefs)
+resources/.metadata/
+
+# OS noise
+Thumbs.db
+.DS_Store
+
+# Claude Code machine-local settings
+.claude/settings.local.json
