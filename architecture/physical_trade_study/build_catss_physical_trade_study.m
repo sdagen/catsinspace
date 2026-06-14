@@ -385,10 +385,7 @@ addProperty(variantStereo, "Notes", Type="string", DefaultValue='""');
 addProperty(variantStereo, "CoreConcept", Type="string", DefaultValue='""');
 addProperty(variantStereo, "Strengths", Type="string", DefaultValue='""');
 addProperty(variantStereo, "Risks", Type="string", DefaultValue='""');
-addProperty(variantStereo, "RequirementPressurePoints", Type="string", DefaultValue='""');
-
 addProperty(elementStereo, "FunctionAnchor", Type="string", DefaultValue='""');
-addProperty(elementStereo, "RequirementIds", Type="string", DefaultValue='""');
 addProperty(elementStereo, "ModuleRole", Type="string", DefaultValue='""');
 
 profile.save(char(studyDir));
@@ -439,7 +436,6 @@ for idx = 1:numel(variant.Components)
     comp = addComponent(arch, char(variant.Components(idx).Name));
     applyStereotype(comp, char(profileName + ".PhysicalElement"));
     setStringProperty(comp, char(profileName + ".PhysicalElement.FunctionAnchor"), variant.Components(idx).FunctionAnchor);
-    setStringProperty(comp, char(profileName + ".PhysicalElement.RequirementIds"), strjoin(cellstr(variant.Components(idx).RequirementIds), ", "));
     setStringProperty(comp, char(profileName + ".PhysicalElement.ModuleRole"), variant.Components(idx).FunctionAnchor + " implementation");
     addSubcomponents(comp, variant.Components(idx).Subcomponents);
     componentMap(char(variant.Components(idx).Name)) = comp;
@@ -659,7 +655,6 @@ setStringProperty(arch, char(propPrefix + "Notes"), variant.RecommendationNote);
 setStringProperty(arch, char(propPrefix + "CoreConcept"), variant.CoreConcept);
 setStringProperty(arch, char(propPrefix + "Strengths"), variant.Strengths);
 setStringProperty(arch, char(propPrefix + "Risks"), variant.Risks);
-setStringProperty(arch, char(propPrefix + "RequirementPressurePoints"), variant.PressurePoints);
 end
 
 function total = weightedTotal(props, weights)
